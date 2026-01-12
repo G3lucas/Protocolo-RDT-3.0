@@ -24,6 +24,13 @@ Para validar a robustez da implementação, o cliente dispõe de um menu interat
 Abra o terminal na pasta do projeto e execute o comando para deixar o receptor em modo de escuta:
 ```bash
 python UDPServer.py
+
+````
+
 ### 2. Inicialização do Cliente
 Em outro terminal, execute: python UDPCliente.py
+
+```bash
+python UDPCliente.py
+
 
