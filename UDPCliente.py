@@ -1,76 +1,91 @@
 import socket
 import time
+import random
 
-# Configuracoes de rede
-IP_ALVO = "127.0.0.1"
-PORTA_ALVO = 5000
-TEMPO_LIMITE = 3.0 # Segundos do cronometro
+# Configurações de rede
+SERVER_IP = "127.0.0.1"
+SERVER_PORT = 5000
+TIMEOUT_VALUE = 3.0  # Tempo limite para o ACK chegar
 
 def calcular_checksum(texto):
-    # Soma simples para verificar erros
+    """Calcula a soma de verificação simples"""
     return sum(ord(c) for c in texto) % 256
 
-def menu_de_testes():
-    print("\n--- COMO QUER ENVIAR? ---")
-    print("1. Enviar normal (Sem erros)")
-    print("2. Corromper mensagem (Erro de Checksum)")
-    print("3. Forcar atraso (Vai dar Timeout)")
-    return input("Escolha a opcao: ")
+def send_packet(data):
+    # Variáveis globais de controle do protocolo RDT 3.0
+    global seq
+    
+    # Menu de simulação de falhas (Exigência do Professor)
+    print("\n--- TESTAR CANAL ---")
+    print("1. Enviar normal")
+    print("2. Corromper mensagem (Checksum)")
+    print("3. Inserir atraso (Timeout)")
+    opcao = input("Escolha uma opção: ")
 
-def iniciar_cliente():
-    # Cria o socket e define o tempo de espera
-    cliente = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    cliente.settimeout(TEMPO_LIMITE)
+    chk_to_send = calcular_checksum(data)
+    simular_delay = False
 
-    # RDT 3.0: Comeca com o pacote 0
-    seq_atual = 0
+    # Aplica as falhas do RDT 3.0
+    if opcao == "2":
+        print("[CLIENTE] >> Avacalhando o checksum...")
+        chk_to_send += 1
+    elif opcao == "3":
+        print("[CLIENTE] >> Ativando simulação de atraso...")
+        simular_delay = True
 
+    # Loop de retransmissão (Stop-and-Wait)
     while True:
-        txt = input("\nEscreva sua mensagem (ou 'parar'): ")
-        if txt.lower() == 'parar': break
-
-        opcao = menu_de_testes()
+        # Monta o pacote: seq|checksum|dados
+        pacote = f"{seq}|{chk_to_send}|{data}"
         
-        chk = calcular_checksum(txt)
-        atraso_manual = 0
+        # Aplica o atraso se solicitado (simula latência ou perda)
+        if simular_delay:
+            delay = random.randint(4, 6) # Maior que o TIMEOUT_VALUE
+            print(f"[CLIENTE] ...Dormindo por {delay}s simulando atraso...")
+            time.sleep(delay)
+            simular_delay = False # Reseta para a retransmissão ser normal
 
-        # Aplica as falhas para mostrar ao professor
-        if opcao == "2":
-            print(">> Alterando o checksum para gerar erro...")
-            chk = chk + 1 
-        elif opcao == "3":
-            print(">> Aplicando atraso artificial...")
-            atraso_manual = TEMPO_LIMITE + 1 # Faz o cliente demorar mais que o timeout
-
-        pacote = f"{seq_atual}|{chk}|{txt}"
-        confirmado = False
-
-        # Loop do protocolo Stop-and-Wait
-        while not confirmado:
-            try:
-                if atraso_manual > 0:
-                    time.sleep(atraso_manual)
-                    atraso_manual = 0 # Reseta para o reenvio ser normal
-
-                print(f"[ENVIO] Mandando Pacote {seq_atual}...")
-                cliente.sendto(pacote.encode(), (IP_ALVO, PORTA_ALVO))
-
-                # Espera a resposta (ACK)
-                dados_ack, _ = cliente.recvfrom(1024)
-                res_ack = dados_ack.decode()
-
-                if res_ack == f"ACK|{seq_atual}":
-                    print(f"[SUCESSO] {res_ack} recebido!")
-                    confirmado = True
-                    seq_atual = 1 - seq_atual # Alterna entre 0 e 1
+        print(f"\n[CLIENTE] Enviando pacote (Seq: {seq})...")
+        print(f"          Dados: '{data}' | Checksum: {chk_to_send}")
+        
+        sock.sendto(pacote.encode(), (SERVER_IP, SERVER_PORT))
+        
+        # Estado: Aguardando ACK
+        try:
+            # Tenta receber resposta
+            recv_data, _ = sock.recvfrom(1024)
+            ack_msg = recv_data.decode()
             
-            except socket.timeout:
-                print(f"[TIMEOUT] Nao recebi o ACK! Reenviando pacote {seq_atual}...")
-            except ConnectionResetError:
-                print("[ERRO] Ligue o servidor primeiro!")
-                break
+            print(f"[CLIENTE] Mensagem recebida do servidor: {ack_msg}")
 
-    cliente.close()
+            if "ACK" in ack_msg:
+                _, ack_seq_str = ack_msg.split("|")
+                ack_seq = int(ack_seq_str)
+                
+                # Verifica se é o ACK esperado
+                if ack_seq == seq:
+                    print(f"[CLIENTE] ✅ ACK {ack_seq} Recebido com sucesso!")
+                    # Alterna sequência para o próximo pacote (0 -> 1 ou 1 -> 0)
+                    seq = 1 - seq
+                    break # Sai do loop de retransmissão e volta para o input principal
+                else:
+                    print(f"[CLIENTE] ⚠️ ACK incorreto (Esperado: {seq}, Veio: {ack_seq}). Ignorando.")
+            
+        except socket.timeout:
+            # Timeout estourou: Retransmitir
+            print(f"[CLIENTE] ⏰ TIMEOUT! Não recebi ACK para Seq {seq}. Retransmitindo...")
 
-if __name__ == "__main__":
-    iniciar_cliente()
+# --- INÍCIO DO PROGRAMA ---
+print("=== CLIENTE RDT 3.0 INICIADO ===")
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.settimeout(TIMEOUT_VALUE)
+seq = 0 # Começa no estado de envio do pacote 0
+
+while True:
+    msg = input("\nDigite a mensagem a ser enviada (ou 'sair'): ")
+    if msg.lower() == 'sair':
+        print("Encerrando...")
+        break
+    send_packet(msg)
+
+sock.close()
