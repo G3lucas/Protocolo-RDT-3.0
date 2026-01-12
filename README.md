@@ -17,6 +17,7 @@ Para validar a robustez da implementação, o cliente dispõe de um menu interat
 2.  **Cenário de Corrupção**: O cliente altera o checksum propositalmente. O servidor detecta a falha e descarta o pacote.
 3.  **Cenário de Perda/Atraso**: O envio é retardado para forçar o estouro do cronômetro de timeout e demonstrar a retransmissão.
 ---
+
 ## 🛠️ Instruções de Uso
 
 ### 1. Inicialização do Servidor
